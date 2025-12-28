@@ -1,4 +1,4 @@
-# name: test/sql/lance_s3_minio.test
+# name: test/sql/s3_scan_minio.test
 # description: End-to-end S3 scan against MinIO using DuckDB secrets
 # group: [sql]
 

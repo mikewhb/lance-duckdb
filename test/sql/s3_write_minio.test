@@ -1,4 +1,4 @@
-# name: test/sql/lance_write_s3_minio.test
+# name: test/sql/s3_write_minio.test
 # description: End-to-end S3 write against MinIO using DuckDB secrets
 # group: [sql]
 

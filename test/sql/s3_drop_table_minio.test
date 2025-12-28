@@ -1,4 +1,4 @@
-# name: test/sql/drop_table_s3_minio.test
+# name: test/sql/s3_drop_table_minio.test
 # description: DROP TABLE deletes Lance datasets in S3 directory namespaces (MinIO)
 # group: [sql]
 
@@ -45,7 +45,7 @@ COPY (
 ) TO 's3://${LANCE_S3_BUCKET}/${LANCE_S3_DROP_DATASET_PREFIX}' (FORMAT lance, mode 'overwrite');
 
 statement ok
-ATTACH 's3://${LANCE_S3_BUCKET}/' AS ns (TYPE LANCE);
+ATTACH 's3://${LANCE_S3_BUCKET}/' AS ns (TYPE LANCE, READ_WRITE true);
 
 query I
 SELECT count(*) FROM ns.main.drop_table_test_data;
@@ -65,4 +65,3 @@ DROP TABLE IF EXISTS ns.main.drop_table_test_data;
 
 statement ok
 DETACH ns;
-
