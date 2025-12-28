@@ -532,8 +532,7 @@ LancePushdownComplexFilter(ClientContext &context, LogicalGet &get,
   };
 
   for (auto &expr : filters) {
-    if (!expr || expr->HasParameter() || expr->IsVolatile() ||
-        expr->CanThrow()) {
+    if (!expr || expr->HasParameter() || expr->IsVolatile()) {
       continue;
     }
     if (scan_bind.take_row_ids.empty()) {
