@@ -407,7 +407,11 @@ fn parse_regexp(cursor: &mut Cursor<'_>) -> Result<Expr> {
         if has_s {
             normalized.push('s');
         }
-        if normalized.is_empty() { None } else { Some(normalized) }
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(normalized)
+        }
     } else {
         None
     };
@@ -421,7 +425,10 @@ fn parse_regexp(cursor: &mut Cursor<'_>) -> Result<Expr> {
                 ))
             }
         };
-        pattern = Expr::Literal(ScalarValue::Utf8(Some(format!("^(?:{pattern_str})$"))), None);
+        pattern = Expr::Literal(
+            ScalarValue::Utf8(Some(format!("^(?:{pattern_str})$"))),
+            None,
+        );
     } else if mode != REGEXP_MODE_PARTIAL_MATCH {
         bail!("unknown regexp mode: {mode}");
     }
