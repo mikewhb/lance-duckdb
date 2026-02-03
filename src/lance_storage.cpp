@@ -1147,7 +1147,7 @@ public:
                               state->open_path + LanceFormatErrorSuffix());
           }
 
-          return state;
+          return std::move(state);
         }
 
         struct LocalState final : public LocalSinkState {};

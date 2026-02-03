@@ -2190,7 +2190,7 @@ LanceExecPushdown(ClientContext &context, Optimizer &optimizer,
         agg_op.group_index, agg_op.aggregate_index, agg_op.groups.size(),
         expected_types, std::move(exec_get));
     exec->SetEstimatedCardinality(estimated_cardinality);
-    return exec;
+    return std::move(exec);
   };
 
   if (op->type == LogicalOperatorType::LOGICAL_ORDER_BY) {
