@@ -23,6 +23,7 @@
 #include "lance_common.hpp"
 #include "lance_ffi.hpp"
 #include "lance_filter_ir.hpp"
+#include "lance_resolver.hpp"
 
 #include <atomic>
 #include <cmath>
@@ -301,7 +302,9 @@ LanceSearchVectorBind(ClientContext &context, TableFunctionBindInput &input,
   }
 
   auto result = make_uniq<LanceKnnBindData>();
-  result->file_path = input.inputs[0].GetValue<string>();
+  result->file_path = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::FALLBACK_TO_PATH,
+      "lance_vector_search");
   result->vector_column = input.inputs[1].GetValue<string>();
   result->query = ParseQueryVector(input.inputs[2], "lance_vector_search");
   result->prefilter = false;
@@ -907,7 +910,9 @@ static unique_ptr<FunctionData> LanceFtsBind(ClientContext &context,
 
   auto result = make_uniq<LanceSearchBindData>();
   result->mode = LanceSearchMode::Fts;
-  result->file_path = input.inputs[0].GetValue<string>();
+  result->file_path = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::FALLBACK_TO_PATH,
+      "lance_fts");
   result->text_column = input.inputs[1].GetValue<string>();
   result->query = input.inputs[2].GetValue<string>();
 
@@ -995,7 +1000,9 @@ LanceHybridBind(ClientContext &context, TableFunctionBindInput &input,
 
   auto result = make_uniq<LanceSearchBindData>();
   result->mode = LanceSearchMode::Hybrid;
-  result->file_path = input.inputs[0].GetValue<string>();
+  result->file_path = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::FALLBACK_TO_PATH,
+      "lance_hybrid_search");
   result->vector_column = input.inputs[1].GetValue<string>();
   result->vector_query =
       ParseQueryVector(input.inputs[2], "lance_hybrid_search");

@@ -1,15 +1,12 @@
 #include "duckdb.hpp"
 
-#include "duckdb/catalog/catalog.hpp"
-#include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
-#include "duckdb/parser/qualified_name.hpp"
 
 #include "lance_common.hpp"
 #include "lance_ffi.hpp"
-#include "lance_table_entry.hpp"
+#include "lance_resolver.hpp"
 
 namespace duckdb {
 
@@ -20,29 +17,6 @@ enum class LanceKvTarget : uint8_t {
   FIELD_METADATA = 4,
   INDICES = 5,
 };
-
-static string ResolveLanceDatasetUriFromTableName(ClientContext &context,
-                                                  const Value &table_name) {
-  if (table_name.IsNull()) {
-    throw BinderException("table name cannot be NULL");
-  }
-  auto table_name_str = table_name.GetValue<string>();
-  if (table_name_str.empty()) {
-    throw BinderException("table name cannot be empty");
-  }
-
-  auto qname = QualifiedName::Parse(table_name_str);
-  auto &entry = Catalog::GetEntry(context, CatalogType::TABLE_ENTRY,
-                                  qname.catalog, qname.schema, qname.name);
-  auto &table_entry = entry.Cast<TableCatalogEntry>();
-  auto *lance_entry = dynamic_cast<LanceTableEntry *>(&table_entry);
-  if (!lance_entry) {
-    throw NotImplementedException(
-        "This operation is only supported for tables in ATTACH TYPE LANCE "
-        "directory namespaces");
-  }
-  return lance_entry->DatasetUri();
-}
 
 static vector<pair<string, string>> ParseTsvRows(const char *ptr) {
   if (!ptr) {
@@ -197,8 +171,8 @@ LanceKvUpdateBind(ClientContext &context, TableFunctionBindInput &input,
     throw BinderException("invalid argument count");
   }
 
-  auto dataset_uri =
-      ResolveLanceDatasetUriFromTableName(context, input.inputs[0]);
+  auto dataset_uri = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::STRICT, "lance_metadata");
 
   string key;
   bool has_value = false;
@@ -337,8 +311,8 @@ LanceKvListBind(ClientContext &context, TableFunctionBindInput &input,
     throw BinderException("invalid argument count");
   }
 
-  auto dataset_uri =
-      ResolveLanceDatasetUriFromTableName(context, input.inputs[0]);
+  auto dataset_uri = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::STRICT, "lance_metadata");
 
   string field_path;
   if (target == LanceKvTarget::FIELD_METADATA) {
@@ -479,8 +453,8 @@ LanceCompactFilesBind(ClientContext &context, TableFunctionBindInput &input,
   if (input.inputs.size() != 1) {
     throw BinderException("lance_compact_files requires 1 argument");
   }
-  auto dataset_uri =
-      ResolveLanceDatasetUriFromTableName(context, input.inputs[0]);
+  auto dataset_uri = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::STRICT, "lance_metadata");
   return_types = {LogicalType::BIGINT};
   names = {"Count"};
   return make_uniq<LanceMaintenanceBindData>(std::move(dataset_uri), 0, false);
@@ -492,8 +466,8 @@ static unique_ptr<FunctionData> LanceCleanupOldVersionsBind(
   if (input.inputs.size() != 3) {
     throw BinderException("lance_cleanup_old_versions requires 3 arguments");
   }
-  auto dataset_uri =
-      ResolveLanceDatasetUriFromTableName(context, input.inputs[0]);
+  auto dataset_uri = ResolveLanceDatasetUri(
+      context, input.inputs[0], LanceResolvePolicy::STRICT, "lance_metadata");
 
   int64_t older_than_seconds = 0;
   if (!input.inputs[1].IsNull()) {
