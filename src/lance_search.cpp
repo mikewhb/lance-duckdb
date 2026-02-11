@@ -910,9 +910,9 @@ static unique_ptr<FunctionData> LanceFtsBind(ClientContext &context,
 
   auto result = make_uniq<LanceSearchBindData>();
   result->mode = LanceSearchMode::Fts;
-  result->file_path = ResolveLanceDatasetUri(
-      context, input.inputs[0], LanceResolvePolicy::FALLBACK_TO_PATH,
-      "lance_fts");
+  result->file_path =
+      ResolveLanceDatasetUri(context, input.inputs[0],
+                             LanceResolvePolicy::FALLBACK_TO_PATH, "lance_fts");
   result->text_column = input.inputs[1].GetValue<string>();
   result->query = input.inputs[2].GetValue<string>();
 

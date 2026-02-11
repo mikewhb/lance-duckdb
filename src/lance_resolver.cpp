@@ -25,8 +25,8 @@ LanceResolveResult DefaultCatalogResolver::TryResolve(ClientContext &context,
       return LanceResolveResult::Success(lance_entry->DatasetUri());
     }
     // Found a table but not a Lance table
-    return LanceResolveResult::Failure(
-        "Table '" + input + "' exists but is not a Lance table");
+    return LanceResolveResult::Failure("Table '" + input +
+                                       "' exists but is not a Lance table");
   } catch (CatalogException &e) {
     // Table not found in catalog
     return LanceResolveResult::Failure("Table '" + input +
