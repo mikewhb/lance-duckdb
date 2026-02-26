@@ -9,6 +9,7 @@
 #include "duckdb/function/table/arrow.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/main/config.hpp"
+#include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/expression/columnref_expression.hpp"
 #include "duckdb/parser/parser_extension.hpp"
@@ -1554,6 +1555,13 @@ LanceIndexPlan(ParserExtensionInfo *, ClientContext &context,
   QualifiedName parsed;
   if (!parse_data->target_is_path) {
     parsed = QualifiedName::Parse(parse_data->target_sql);
+    // Fill in default catalog/schema if not specified
+    if (parsed.catalog.empty()) {
+      parsed.catalog = DatabaseManager::GetDefaultDatabase(context);
+    }
+    if (parsed.schema.empty()) {
+      parsed.schema = DEFAULT_SCHEMA;
+    }
     qname = &parsed;
   }
   switch (parse_data->kind) {
