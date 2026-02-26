@@ -353,7 +353,7 @@ ORDER BY _distance
 query I
 SELECT id
 FROM lance_vector_search(
-  'search_ns.main.search_test_data',
+  'search_test_data',
   'vec',
   [0.0, 0.0, 0.0, 0.0]::FLOAT[4],
   k = 3,
