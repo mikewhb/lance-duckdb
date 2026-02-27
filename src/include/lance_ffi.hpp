@@ -225,6 +225,17 @@ int32_t lance_dataset_optimize_index(void *dataset, const char *index_name,
 void *lance_get_index_list_schema(void *dataset);
 void *lance_create_index_list_stream(void *dataset);
 
+// Spatial RTree index scan: returns a stream of rows whose bounding boxes
+// intersect [min_x, min_y, max_x, max_y]. Result is AtMost (may include
+// false positives; caller should recheck if exact results are required).
+// Returns NULL on error; call lance_last_error_message() for details.
+void *lance_create_rtree_scan_stream(void *dataset,
+                                     const char *geometry_column,
+                                     double min_x, double min_y,
+                                     double max_x, double max_y,
+                                     const char **columns,
+                                     size_t columns_len);
+
 void lance_free_batch(void *batch);
 int32_t lance_batch_to_arrow(void *batch, ArrowArray *out_array,
                              ArrowSchema *out_schema);

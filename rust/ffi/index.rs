@@ -411,6 +411,7 @@ fn build_index_params(
         "INVERTED" => IndexType::Inverted,
         "NGRAM" | "N_GRAM" => IndexType::NGram,
         "LABELLIST" | "LABEL_LIST" => IndexType::LabelList,
+        "RTREE" | "R_TREE" => IndexType::RTree,
         other => {
             return Err(FfiError::new(
                 ErrorCode::DatasetCreateIndex,

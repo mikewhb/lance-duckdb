@@ -24,7 +24,8 @@ set(EXTENSION_SOURCES src/lance_extension.cpp src/lance_scan.cpp
                       src/lance_write.cpp
                       src/lance_truncate.cpp
                       src/lance_index.cpp
-                      src/lance_resolver.cpp)
+                      src/lance_resolver.cpp
+                      src/lance_geo_scan.cpp)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
@@ -127,6 +128,7 @@ set(RUST_FFI_DEPENDS
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/arrow_export.rs
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/dataset.rs
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/exec.rs
+    ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/geo.rs
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/index.rs
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/knn.rs
     ${CMAKE_CURRENT_LIST_DIR}/rust/ffi/mod.rs

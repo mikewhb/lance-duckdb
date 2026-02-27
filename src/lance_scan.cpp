@@ -46,6 +46,8 @@
 #include "lance_scan_bind_data.hpp"
 #include "lance_table_entry.hpp"
 
+#include "duckdb/common/arrow/schema_metadata.hpp"
+
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -72,6 +74,23 @@
 namespace duckdb {
 
 static TableFunction LanceExecFunction();
+
+// ── GeoArrow → GEOMETRY type resolution ──────────────────────────────────
+// After PopulateArrowTableSchema, check if any column carries GeoArrow
+// extension metadata (ARROW:extension:name starting with "geoarrow.").
+// If the DuckDB "spatial" extension is loaded, resolve the column type to
+// GEOMETRY so that spatial functions like ST_Intersects can bind correctly.
+//
+// TODO(geo): Currently disabled because changing types without updating the
+// ArrowTableSchema ArrowType causes ArrowToDuckDB to crash — the ArrowType
+// is still STRUCT but the output Vector expects GEOMETRY (BLOB).
+// To fully enable this, either:
+//   a) Register a custom ArrowTypeExtension with cast callback, or
+//   b) Convert GeoArrow STRUCT data to WKB in the Rust FFI layer.
+static void TryResolveGeoArrowTypes(ClientContext &, const ArrowSchema &,
+                                    vector<LogicalType> &) {
+  // no-op for now
+}
 
 static unique_ptr<BaseStatistics>
 LanceScanStatistics(ClientContext &context, const FunctionData *bind_data_p,
@@ -787,6 +806,8 @@ static unique_ptr<FunctionData> LanceScanBind(ClientContext &context,
       config, result->arrow_table, result->schema_root.arrow_schema);
   result->names = result->arrow_table.GetNames();
   result->types = result->arrow_table.GetTypes();
+  TryResolveGeoArrowTypes(context, result->schema_root.arrow_schema,
+                          result->types);
 
   auto *scan_schema_handle = lance_get_schema_for_scan(result->dataset);
   if (!scan_schema_handle) {
@@ -881,6 +902,8 @@ LanceNamespaceScanBind(ClientContext &context, TableFunctionBindInput &input,
       config, result->arrow_table, result->schema_root.arrow_schema);
   result->names = result->arrow_table.GetNames();
   result->types = result->arrow_table.GetTypes();
+  TryResolveGeoArrowTypes(context, result->schema_root.arrow_schema,
+                          result->types);
 
   auto *scan_schema_handle = lance_get_schema_for_scan(result->dataset);
   if (!scan_schema_handle) {
@@ -2453,6 +2476,8 @@ static unique_ptr<FunctionData> LanceExecBind(ClientContext &context,
       config, result->arrow_table, result->schema_root.arrow_schema);
   result->names = result->arrow_table.GetNames();
   result->types = result->arrow_table.GetTypes();
+  TryResolveGeoArrowTypes(context, result->schema_root.arrow_schema,
+                          result->types);
 
   names = result->names;
   return_types = result->types;
@@ -2683,7 +2708,8 @@ static void PopulateLanceTableSchemaFromDataset(
   ArrowTableFunction::PopulateArrowTableSchema(config, arrow_table,
                                                schema_root.arrow_schema);
   const auto names = arrow_table.GetNames();
-  const auto types = arrow_table.GetTypes();
+  auto types = arrow_table.GetTypes();
+  TryResolveGeoArrowTypes(context, schema_root.arrow_schema, types);
   if (names.size() != types.size()) {
     throw InternalException(
         "Arrow table schema returned mismatched names/types sizes");
@@ -3069,6 +3095,8 @@ LanceTableEntry::GetScanFunction(ClientContext &context,
       config, result->arrow_table, result->schema_root.arrow_schema);
   result->names = result->arrow_table.GetNames();
   result->types = result->arrow_table.GetTypes();
+  TryResolveGeoArrowTypes(context, result->schema_root.arrow_schema,
+                          result->types);
 
   auto *scan_schema_handle = lance_get_schema_for_scan(result->dataset);
   if (!scan_schema_handle) {

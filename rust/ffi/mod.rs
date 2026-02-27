@@ -2,6 +2,7 @@ mod arrow_export;
 mod dataset;
 mod dir_namespace;
 mod exec;
+mod geo;
 mod index;
 mod knn;
 mod namespace;
