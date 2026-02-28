@@ -8,6 +8,8 @@
 #include "lance_common.hpp"
 #include "lance_ffi.hpp"
 
+#include "duckdb/function/table/arrow/arrow_duck_schema.hpp"
+
 #include <cstdint>
 
 namespace duckdb {
@@ -159,8 +161,12 @@ static void LanceWriteSink(ExecutionContext &context, FunctionData &,
   auto &gstate = gstate_p.Cast<LanceWriteGlobalState>();
 
   auto props = context.client.GetClientProperties();
-  unordered_map<idx_t, const shared_ptr<ArrowTypeExtensionData>>
-      extension_type_cast;
+
+  // Retrieve registered ArrowTypeExtension callbacks (e.g. geoarrow.wkb for
+  // GEOMETRY) so that extension types are properly converted before writing.
+  // For GEOMETRY this invokes DuckToArrow (spatial internal format → WKB).
+  auto extension_type_cast =
+      ArrowTypeExtensionData::GetExtensionTypes(context.client, input.GetTypes());
 
   ArrowArray array;
   memset(&array, 0, sizeof(array));

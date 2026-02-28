@@ -1,0 +1,305 @@
+# name: test/sql/lance_spatial_join.test
+# description: Port of duckdb_spatial spatial join tests to Lance data path.
+#              All data is written to .lance files, then spatial joins are performed
+#              between Lance tables to verify correctness.
+#
+# Ported from:
+#   join/spatial_join_predicates.test (data correctness, not EXPLAIN plan check)
+#   join/spatial_join_empty.test
+#   join/spatial_join_empty_build.test
+#   join/spatial_join_expr.test (data correctness)
+#   join/spatial_join_cte.test (adapted: CTE data written to lance first)
+#   join/spatial_join_outer.test_slow (data correctness, all join types)
+#
+# NOT ported:
+#   join/spatial_join_test.test_slow (large grid, slow)
+#   join/spatial_join_test_2.test_slow (random polygons, non-deterministic with Lance)
+#   join/spatial_join_test_3.test_slow (random polygons, non-deterministic with Lance)
+#   EXPLAIN plan checks (SPATIAL_JOIN optimizer may not activate for lance_scan)
+#
+# group: [lance]
+
+require spatial
+
+require lance
+
+# ============================================================
+# Port of: spatial_join_predicates.test (data correctness only)
+# Original: two in-memory tables, spatial join with various predicates
+# Lance: both tables written to .lance, then joined
+# ============================================================
+
+statement ok
+CREATE TABLE predicate_lhs_src AS
+SELECT
+    ST_Point(x, y)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(0, 500, 10) r1(x),
+    generate_series(0, 500, 10) r2(y);
+
+statement ok
+CREATE TABLE predicate_rhs_src AS
+SELECT
+    ST_Buffer(ST_Point(x, y), 5)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(250, 750, 10) r1(x),
+    generate_series(250, 750, 10) r2(y);
+
+statement ok
+COPY predicate_lhs_src TO '__TEST_DIR__/join_pred_lhs.lance' (FORMAT lance);
+
+statement ok
+COPY predicate_rhs_src TO '__TEST_DIR__/join_pred_rhs.lance' (FORMAT lance);
+
+# Verify ST_Intersects join between two Lance tables produces results
+query I
+SELECT count(*) > 0 FROM '__TEST_DIR__/join_pred_lhs.lance' l JOIN '__TEST_DIR__/join_pred_rhs.lance' r ON ST_Intersects(l.geom, r.geom);
+----
+true
+
+# Verify ST_Within join
+query I
+SELECT count(*) > 0 FROM '__TEST_DIR__/join_pred_lhs.lance' l JOIN '__TEST_DIR__/join_pred_rhs.lance' r ON ST_Within(l.geom, r.geom);
+----
+true
+
+# Verify ST_Contains join (reversed)
+query I
+SELECT count(*) > 0 FROM '__TEST_DIR__/join_pred_rhs.lance' r JOIN '__TEST_DIR__/join_pred_lhs.lance' l ON ST_Contains(r.geom, l.geom);
+----
+true
+
+# ============================================================
+# Port of: spatial_join_empty.test
+# Original: lhs has points, rhs is empty -> LEFT JOIN returns all lhs with NULL rhs
+# Lance: both tables to .lance
+# ============================================================
+
+statement ok
+CREATE TABLE empty_lhs_src AS
+SELECT
+    ST_Point(x, y)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(0, 500, 10) r1(x),
+    generate_series(0, 500, 10) r2(y);
+
+statement ok
+COPY empty_lhs_src TO '__TEST_DIR__/join_empty_lhs.lance' (FORMAT lance);
+
+# Create an empty rhs (with schema but no matching spatial rows)
+statement ok
+CREATE TABLE empty_rhs_src (geom GEOMETRY, id INTEGER);
+
+statement ok
+INSERT INTO empty_rhs_src VALUES (ST_Point(99999, 99999)::GEOMETRY, -1);
+
+statement ok
+COPY empty_rhs_src TO '__TEST_DIR__/join_empty_rhs.lance' (FORMAT lance);
+
+# LEFT JOIN with empty rhs (no matching rows) => all lhs returned, rhs columns NULL
+query I
+SELECT count(*) FROM '__TEST_DIR__/join_empty_lhs.lance' l LEFT JOIN '__TEST_DIR__/join_empty_rhs.lance' r ON ST_Intersects(l.geom, r.geom);
+----
+2601
+
+# All rhs.id should be NULL (no matches in the far-away point)
+query I
+SELECT count(*) FROM '__TEST_DIR__/join_empty_lhs.lance' l LEFT JOIN '__TEST_DIR__/join_empty_rhs.lance' r ON ST_Intersects(l.geom, r.geom) WHERE r.id IS NOT NULL;
+----
+0
+
+# ============================================================
+# Port of: spatial_join_empty_build.test
+# Original: rhs has empty/NULL geometries -> test join behavior
+# Lance: rhs with empty/NULL geoms written to .lance
+# ============================================================
+
+statement ok
+CREATE TABLE ebuild_lhs_src AS
+SELECT
+    ST_Point(x, y)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(0, 500, 50) r1(x),
+    generate_series(0, 500, 50) r2(y);
+
+statement ok
+COPY ebuild_lhs_src TO '__TEST_DIR__/join_ebuild_lhs.lance' (FORMAT lance);
+
+statement ok
+CREATE TABLE ebuild_rhs_src (geom GEOMETRY, id INTEGER);
+
+statement ok
+INSERT INTO ebuild_rhs_src VALUES
+    (ST_Point(0, 0)::GEOMETRY, 1),
+    (ST_GeomFromText('MULTIPOLYGON EMPTY'), 2),
+    (ST_GeomFromText('GEOMETRYCOLLECTION EMPTY'), 3);
+
+statement ok
+COPY ebuild_rhs_src TO '__TEST_DIR__/join_ebuild_rhs.lance' (FORMAT lance);
+
+# INNER JOIN: only the ST_Point(0,0) should match
+query IIII rowsort
+SELECT l.geom, l.id, r.geom, r.id FROM '__TEST_DIR__/join_ebuild_lhs.lance' l JOIN '__TEST_DIR__/join_ebuild_rhs.lance' r ON ST_Intersects(l.geom, r.geom);
+----
+POINT (0 0)	0	POINT (0 0)	1
+
+# ============================================================
+# Port of: spatial_join_expr.test
+# Original: rhs is completely out of range, then use ST_Translate to bring in range
+# Lance: both tables to .lance, test with translated geometry
+# ============================================================
+
+statement ok
+CREATE TABLE expr_lhs_src AS
+SELECT
+    ST_Point(x, y)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(0, 500, 10) r1(x),
+    generate_series(0, 500, 10) r2(y);
+
+statement ok
+CREATE TABLE expr_rhs_src AS
+SELECT
+    ST_Buffer(ST_Point(x, y), 5)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(1000, 1100, 10) r1(x),
+    generate_series(1000, 1100, 10) r2(y);
+
+statement ok
+COPY expr_lhs_src TO '__TEST_DIR__/join_expr_lhs.lance' (FORMAT lance);
+
+statement ok
+COPY expr_rhs_src TO '__TEST_DIR__/join_expr_rhs.lance' (FORMAT lance);
+
+# No matches (rhs is at x=1000..1100, lhs at x=0..500)
+query I
+SELECT count(*) FROM '__TEST_DIR__/join_expr_lhs.lance' l JOIN '__TEST_DIR__/join_expr_rhs.lance' r ON st_intersects(l.geom, r.geom);
+----
+0
+
+# With ST_Translate bringing rhs into range
+query I
+SELECT count(*) > 0 FROM '__TEST_DIR__/join_expr_lhs.lance' l JOIN '__TEST_DIR__/join_expr_rhs.lance' r ON ST_Intersects(l.geom, ST_Translate(r.geom, -1000, -1000));
+----
+true
+
+# ============================================================
+# Port of: spatial_join_cte.test (adapted for Lance)
+# Original: pure CTE with inline data, no table storage
+# Lance: write CTE data to .lance, then join from .lance
+# ============================================================
+
+statement ok
+CREATE TABLE cte_bigger_src (region VARCHAR, geom GEOMETRY);
+
+statement ok
+INSERT INTO cte_bigger_src VALUES
+    ('a', ST_GeomFromText('POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))')),
+    ('b', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))')),
+    ('c', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))')),
+    ('d', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))')),
+    ('e', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))')),
+    ('f', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))')),
+    ('g', ST_GeomFromText('POLYGON ((50 50, 50 60, 60 60, 60 50, 50 50))'));
+
+statement ok
+CREATE TABLE cte_smaller_src (region VARCHAR, geom GEOMETRY);
+
+statement ok
+INSERT INTO cte_smaller_src VALUES
+    ('1', ST_GeomFromText('POLYGON ((2 2, 2 8, 8 8, 8 2, 2 2))')),
+    ('2', ST_GeomFromText('POLYGON ((3 3, 3 5, 5 5, 5 3, 3 3))'));
+
+statement ok
+COPY cte_bigger_src TO '__TEST_DIR__/join_cte_bigger.lance' (FORMAT lance);
+
+statement ok
+COPY cte_smaller_src TO '__TEST_DIR__/join_cte_smaller.lance' (FORMAT lance);
+
+query IIII
+SELECT s.region, s.geom, b.region, b.geom
+FROM '__TEST_DIR__/join_cte_smaller.lance' s
+LEFT JOIN '__TEST_DIR__/join_cte_bigger.lance' b ON st_intersects(b.geom, s.geom)
+ORDER BY ALL;
+----
+1	POLYGON ((2 2, 2 8, 8 8, 8 2, 2 2))	a	POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))
+2	POLYGON ((3 3, 3 5, 5 5, 5 3, 3 3))	a	POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))
+
+# ============================================================
+# Port of: spatial_join_outer.test_slow (all join types, data correctness)
+# Original: 2601 points x 2601 buffers, compare with/without optimizer
+# Lance: smaller grid for speed, verify data correctness across join types
+# ============================================================
+
+statement ok
+CREATE TABLE outer_lhs_src AS
+SELECT
+    ST_Point(x, y)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(0, 100, 10) r1(x),
+    generate_series(0, 100, 10) r2(y);
+
+statement ok
+CREATE TABLE outer_rhs_src AS
+SELECT
+    ST_Buffer(ST_Point(x, y), 5)::GEOMETRY as geom,
+    (y * 50) + x // 10 as id
+FROM
+    generate_series(50, 150, 10) r1(x),
+    generate_series(50, 150, 10) r2(y);
+
+statement ok
+COPY outer_lhs_src TO '__TEST_DIR__/join_outer_lhs.lance' (FORMAT lance);
+
+statement ok
+COPY outer_rhs_src TO '__TEST_DIR__/join_outer_rhs.lance' (FORMAT lance);
+
+# Compute reference counts from in-memory tables
+statement ok
+CREATE TABLE ref_inner AS SELECT count(*) as cnt FROM outer_lhs_src l JOIN outer_rhs_src r ON st_intersects(l.geom, r.geom);
+
+statement ok
+CREATE TABLE ref_left AS SELECT count(*) as cnt FROM outer_lhs_src l LEFT JOIN outer_rhs_src r ON st_intersects(l.geom, r.geom);
+
+statement ok
+CREATE TABLE ref_right AS SELECT count(*) as cnt FROM outer_lhs_src l RIGHT JOIN outer_rhs_src r ON st_intersects(l.geom, r.geom);
+
+# INNER JOIN on Lance tables
+query I
+SELECT count(*) = (SELECT cnt FROM ref_inner) FROM '__TEST_DIR__/join_outer_lhs.lance' l JOIN '__TEST_DIR__/join_outer_rhs.lance' r ON st_intersects(l.geom, r.geom);
+----
+true
+
+# LEFT JOIN on Lance tables
+query I
+SELECT count(*) = (SELECT cnt FROM ref_left) FROM '__TEST_DIR__/join_outer_lhs.lance' l LEFT JOIN '__TEST_DIR__/join_outer_rhs.lance' r ON st_intersects(l.geom, r.geom);
+----
+true
+
+# RIGHT JOIN on Lance tables
+query I
+SELECT count(*) = (SELECT cnt FROM ref_right) FROM '__TEST_DIR__/join_outer_lhs.lance' l RIGHT JOIN '__TEST_DIR__/join_outer_rhs.lance' r ON st_intersects(l.geom, r.geom);
+----
+true
+
+# ============================================================
+# Cross-validation: Lance x Memory table spatial join
+# Verify Lance and in-memory produce identical results
+# ============================================================
+
+query I
+SELECT count(*) = (SELECT cnt FROM ref_inner) FROM '__TEST_DIR__/join_outer_lhs.lance' l JOIN outer_rhs_src r ON st_intersects(l.geom, r.geom);
+----
+true
+
+query I
+SELECT count(*) = (SELECT cnt FROM ref_inner) FROM outer_lhs_src l JOIN '__TEST_DIR__/join_outer_rhs.lance' r ON st_intersects(l.geom, r.geom);
+----
+true
