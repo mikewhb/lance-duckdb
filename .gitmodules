@@ -6,3 +6,7 @@
 	path = extension-ci-tools
 	url = https://github.com/duckdb/extension-ci-tools
 	branch = v1.4-andium
+[submodule "duckdb_spatial"]
+	path = duckdb_spatial
+	url = https://github.com/duckdb/duckdb_spatial.git
+	branch = v1.4-andium
