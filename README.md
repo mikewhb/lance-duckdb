@@ -6,7 +6,7 @@
 
 ### Install from DuckDB (recommended)
 
-If you just want to use the extension, install it directly from DuckDB's community extensions repository:
+If you just want to use the extension, install it directly from DuckDB's core extensions repository:
 
 ```sql
 INSTALL lance;
@@ -17,7 +17,7 @@ SELECT *
   LIMIT 1;
 ```
 
-See DuckDB's extension page for `lance` for the latest release details: https://duckdb.org/community_extensions/extensions/lance
+See DuckDB's extension page for `lance` for the latest release details: https://duckdb.org/docs/stable/core_extensions/lance
 
 ### Build from source (development)
 
